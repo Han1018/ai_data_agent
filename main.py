@@ -276,22 +276,25 @@ if __name__ == "__main__":
     ]
         
     test_data = {
-        "annual_query": [
-            "Amazon 2020〜2024 Q1 的 Revenue 是否持續增長？",
-            "Apple 2021〜2023 Q3 的 Operating Margin 是否穩定？"
-        ],
-        "Quarterly_Comparisons": [
-            "TSMC 2021 Q1 與 2021 Q2 的 Operating Income 哪一季較高？",
-            "Google 2021 Q4 和 2022 Q4 的 Revenue 變動幅度是多少？",
-        ],
-        "Complex_Questions":[
-            "Intel 2020 Q4 和 2023 Q4 的 Gross Profit Margin 是否上升？",
-            "Samsung 2021 Q3 和 2023 Q3 的 Operating Expense 是否增加？",
-            "TSMC 2021 Q1 和 2024 Q1 的 Operating Margin 變化是否與 Samsung 相同？",
-            "Google, Apple, Microsoft 2020〜2024 Q4 的 Revenue 誰增幅最大？",
-            "Intel 2023 Q2 的 Operating Expense 是否當季特別高？",
-            "Amazon 2021 Q4 的 Tax Expense 是否對比前季異常升高？"
+        "new" : [
+            "What is AMD's operating margin in 2023 Q3?"
         ]
+        # "annual_query": [
+        #     "Amazon 2020〜2024 Q1 的 Revenue 是否持續增長？",
+        #     "Apple 2021〜2023 Q3 的 Operating Margin 是否穩定？"
+        # ],
+        # "Quarterly_Comparisons": [
+        #     "TSMC 2021 Q1 與 2021 Q2 的 Operating Income 哪一季較高？",
+        #     "Google 2021 Q4 和 2022 Q4 的 Revenue 變動幅度是多少？",
+        # ],
+        # "Complex_Questions":[
+        #     "Intel 2020 Q4 和 2023 Q4 的 Gross Profit Margin 是否上升？",
+        #     "Samsung 2021 Q3 和 2023 Q3 的 Operating Expense 是否增加？",
+        #     "TSMC 2021 Q1 和 2024 Q1 的 Operating Margin 變化是否與 Samsung 相同？",
+        #     "Google, Apple, Microsoft 2020〜2024 Q4 的 Revenue 誰增幅最大？",
+        #     "Intel 2023 Q2 的 Operating Expense 是否當季特別高？",
+        #     "Amazon 2021 Q4 的 Tax Expense 是否對比前季異常升高？"
+        # ]
     }
     
     print("=== start test data ===")

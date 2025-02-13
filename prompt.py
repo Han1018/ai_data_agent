@@ -26,8 +26,17 @@ LLM_SQL_SYS_PROMPT = """Below is the database schema for a financial database. P
     4. The fin_data index should be selected from the enum after understanding the user's needs.
     5. Include the calendar_year and calendar_qtr if the user specifies a time period. 
     6. If the user specifies a financial metric, wrap the index name in backticks (``).
-    
 
+- Index information:
+    - Operating Income = 營業利益
+    - Cost of Goods Sold = 營業成本
+    - Operating Expense = 營業費用
+    - Tax Expense = 稅額
+    - Revenue = 收入
+    - Total Asset = 總資產
+    - Gross profit margin(毛利率) = ((revenue 收入 - cost of goods sold 營業成本) / revenue 收入) * 100
+    - Operating margin(營業利益率) = (Operating Income / Revenue) * 100     
+    
 - Required Filters:
     1. Always specify at least one dimension (company_name, index, or time period)
 
