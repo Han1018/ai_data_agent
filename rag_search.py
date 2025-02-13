@@ -123,8 +123,7 @@ rag_tool = Tool(
 )
 
 def get_rag_tools():
-    return [rag_tool]
-
+    return [rag_tool] if rag_tool else []
 
 if __name__ == "__main__":
     query = " Apple in 2021 Q2 法說會議說了什麼？"

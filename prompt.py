@@ -1,4 +1,5 @@
-LLM_SQL_SYS_PROMPT = """Below is the database schema for a financial database. Please translate the user's question into a output example style question.
+LLM_SQL_SYS_PROMPT = """請將以下查詢轉換成具體且明確的 user query: {query}
+Below is the database schema for a financial database. Please translate the user's question into a output example style question.
 
 **Table Structure:**
 - Table Name: fin_data
@@ -88,4 +89,87 @@ Output format:
 Company Name: <Extracted Company or None>
 CALENDAR_YEAR: <Extracted Year or None>
 CALENDAR_QTR: <Extracted Quarter or None>
+"""
+
+
+MULTI_RAG_PROMPT = """Please analyze the following query and extract structured information.
+1 **Extract Information:**
+- **Company Name** (e.g., Apple, Google, etc.): If not specified, return "None".
+- **CALENDAR_YEAR** (e.g., 2021, 2020, etc.): If not specified, return "None".
+- **CALENDAR_QTR** (e.g., Q1, Q2, Q3, Q4): If not specified, return "None".
+
+2 **Check if multiple values exist:**
+- If there are **two or more** `Company Names`, `CALENDAR_YEAR`, or `CALENDAR_QTR`, return `"Yes"`.
+- Otherwise, return `"No"`.
+
+3 **Generate Split Queries:**
+- If `"Yes"`, create a list of sub-queries where each query contains only **one company, one calendar year, and one calendar quarter**.
+- The output should be formatted as a **Python list of strings**.
+
+---
+
+**Example 1**
+Query: "Summarize the earnings call for TSMC, AMD, and Apple in 2022 Q3 and Q4."
+
+**Output:**
+```json
+{{
+    "Extracted Info": {{
+        "Company Name": ["TSMC", "AMD", "Apple"],
+        "CALENDAR_YEAR": ["2022"],
+        "CALENDAR_QTR": ["Q3", "Q4"]
+    }},
+    "Multiple Values Exist": "Yes",
+    "Split Queries": [
+        "Summarize the earnings call for TSMC in 2022 Q3.",
+        "Summarize the earnings call for TSMC in 2022 Q4.",
+        "Summarize the earnings call for AMD in 2022 Q3.",
+        "Summarize the earnings call for AMD in 2022 Q4.",
+        "Summarize the earnings call for Apple in 2022 Q3.",
+        "Summarize the earnings call for Apple in 2022 Q4."
+    ]
+}}
+```
+**Example 2**
+Query: "Summarize the earnings call for Apple in 2021 Q2."
+
+**Output:**
+```json
+{{
+    "Extracted Info": {{
+        "Company Name": ["Apple"],
+        "CALENDAR_YEAR": ["2021"],
+        "CALENDAR_QTR": ["Q2"]
+    }},
+    "Multiple Values Exist": "No",
+    "Split Queries": [
+        "Summarize the earnings call for Apple in 2021 Q2."
+    ]
+}}
+```
+
+Query: "{query}"
+**Output:**
+"""
+
+USER_DECIDE_SEARCH_PROMPT = """You are an AI financial analysis assistant specializing in processing corporate financial data and earnings call transcripts. Your task is to analyze the user's query and determine whether **SQL search (for financial data)** or **RAG search (for earnings call transcripts)** is required.
+### **📋 User Query**
+{query}
+
+---
+
+### **🔍 Your Response Format**
+You must respond in **JSON format** with the following field:
+1. **Search Types** (`search_types`): Either `"SQL search"`, `"RAG search"`, or `["SQL search", "RAG search"]`, depending on the query's needs.
+
+### **📖 Criteria for Determining Search Type**
+- If the query relates to **numerical financial data** (e.g., revenue, operating income, profit margin), return **"SQL search"**.
+- If the query asks about **qualitative discussions** (e.g., strategy, market trends, CEO statements), return **"RAG search"**.
+- If the query contains both financial metrics and qualitative topics, return **both search types**.
+
+### **💡 Expected Output Format**
+{{
+  "search_types": ["SQL search", "RAG search"]
+}}
+
 """

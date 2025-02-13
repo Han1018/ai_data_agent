@@ -9,6 +9,8 @@ def decide_tools(query: str):
     need_sql = any(k in lower_q for k in numeric_keywords)
     need_rag = any(k in lower_q for k in text_keywords)
 
+
+    
     if need_sql and need_rag:
         return ["sql_db_query", "RAG_Search"]
     elif need_sql:

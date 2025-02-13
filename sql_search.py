@@ -49,7 +49,7 @@ sql_tool = Tool(
 )
 
 def get_sql_tools():
-    return [sql_tool]
+    return [sql_tool] if sql_tool else []
 
 
 
