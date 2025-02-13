@@ -216,7 +216,8 @@ class Agent:
     def adjust_sql_query(self, state: AgentState) -> AgentState:
         """調整 SQL Query，使其更加明確"""
         query = state["query"]
-        adjusted_query = self.model.invoke(f"請將以下查詢轉換成具體且明確的 user query: {query}\n" + LLM_SQL_SYS_PROMPT).content
+        query_and_prompt = LLM_SQL_SYS_PROMPT.format(user_query=query)
+        adjusted_query = self.model.invoke(query_and_prompt).content
         
         print(f"Adjusted SQL query: {adjusted_query}\n")
         return {"query": adjusted_query, "tools": state["tools"], "tool_results": [], "final_answer": ""}
@@ -276,9 +277,15 @@ if __name__ == "__main__":
     ]
         
     test_data = {
-        "new" : [
-            "What is AMD's operating margin in 2023 Q3?"
-        ]
+        # "new" : [
+        #     "What is AMD's gross profit margin in 2023 Q3?"
+        # ],
+        
+        "twd currency": [
+            "What was the Revenue in Q1 2020 for Amazon in TWD?",
+            "Samsung 2020~2024 Q4 的 Revenue 是多少 TWD?",
+        ],
+        
         # "annual_query": [
         #     "Amazon 2020〜2024 Q1 的 Revenue 是否持續增長？",
         #     "Apple 2021〜2023 Q3 的 Operating Margin 是否穩定？"

@@ -1,4 +1,6 @@
-LLM_SQL_SYS_PROMPT = """Below is the database schema for a financial database. Please translate the user's question into a output example style question.
+LLM_SQL_SYS_PROMPT = """Transform user questiom into a more specific, complete, and easily interpretable question for the model. User quesition : {user_query}
+
+Below is the database schema for a financial database. Please translate the user's question into a output example style question.
 
 **Table Structure:**
 - Table Name: fin_data
