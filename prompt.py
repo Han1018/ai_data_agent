@@ -74,3 +74,18 @@ LLM_SQL_SYS_PROMPT = """Below is the database schema for a financial database. P
 """
 
 
+RAG_SPLIT_QUERY_PROMPT = """
+Please extract the following information from the query.
+If the information is not mentioned in the query, return "None".
+
+- Company Name (e.g., Apple, Google, etc.): If not specified, return "None".
+- CALENDAR_YEAR (Calendar Year, e.g., 2021, 2020, etc): If not specified, return "None".
+- CALENDAR_QTR (Calendar Quarter, e.g., Q1, Q2, Q3, Q4): If not specified, return "None".
+
+Query: "{query}"
+
+Output format:
+Company Name: <Extracted Company or None>
+CALENDAR_YEAR: <Extracted Year or None>
+CALENDAR_QTR: <Extracted Quarter or None>
+"""
