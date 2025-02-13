@@ -26,6 +26,7 @@ LLM_SQL_SYS_PROMPT = """Below is the database schema for a financial database. P
     4. The fin_data index should be selected from the enum after understanding the user's needs.
     5. Include the calendar_year and calendar_qtr if the user specifies a time period. 
     6. If the user specifies a financial metric, wrap the index name in backticks (``).
+    7. Exchange rate of USD:TWD = 1 : 32.93
 
 - Index information:
     - Operating Income = 營業利益
