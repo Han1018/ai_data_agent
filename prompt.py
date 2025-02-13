@@ -19,12 +19,13 @@ LLM_SQL_SYS_PROMPT = """Below is the database schema for a financial database. P
   - val_unit (VARCHAR) - Unit of measure (e.g., millions, thousands)
   - local_value (NUMERIC) - Value in original currency
 
-- Output Guidelines:
+- Output Guidelines: 
     1. Always filter 'index' using exact enum values
     2. Include currency units when presenting values
     3. Include USD and local currency in output. if not specified.
     4. The fin_data index should be selected from the enum after understanding the user's needs.
-    5. Include the calendar_year and calendar_qtr if the user specifies a time period.
+    5. Include the calendar_year and calendar_qtr if the user specifies a time period. 
+    6. If the user specifies a financial metric, wrap the index name in backticks (``).
     
 
 - Required Filters:

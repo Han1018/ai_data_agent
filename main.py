@@ -45,7 +45,7 @@ db = SQLDatabase(engine)
 # 2. 初始化 Vertex AI & LLM
 ############################################
 init(project=PROJECT_ID, location=REGION)
-llm = init_chat_model("gemini-1.5-pro", model_provider="google_vertexai")
+llm = init_chat_model("gemini-2.0-flash", model_provider="google_vertexai")
 
 ############################################
 # 3. 設定 SQL Agent 工具
@@ -271,52 +271,32 @@ if __name__ == "__main__":
     # 建立 Agent 物件
     agent = Agent(model=llm, sql_tools=sql_tools, rag_tools=rag_tools)
 
-    test_queries = [
-        "What is Amazon's Revenue in 2022 Q1?",       # show 單一公司單一指標
-        "show the `evenue`, `Tax Expense`, `Operating Expense` of Amazon in 2020 Q1.",     # show 單一公司多個指標
-        "show the `evenue`, `Taxespense`, `Operating Expense` of Amazon in 2020 Q1.",     # show 單一公司多個指標, 但語法錯誤
-        "show the all value of Amazon in 2020 Q1?",     # show 單一公司所有指標
-        # "Find Amazon's 2020 Q1 earnings call insights.",
-        # "Show both 2020 Amazon Q1 revenue and future outlook."
-    ]   
-    sigle_value_query = [
-        "What is Amazon's Revenue in 2022 Q1?",
-        "What is AMD's Operating Income in 2023 Q3?",
+    failed_queries = [
+        "Did Intel's Gross Profit Margin increase in 2020 Q4?"
     ]
-    trend_anlysis_query = [
-        "Did Intel's Gross Profit Margin increase in 2020 Q4?",
-        "Did Samsung's Operating Expense decrease in 2020 Q3?",
-    ]
-    
-    time_based_comparison_query = [
-        "Is Qualcomm's Total Asset in 2023 Q1 higher than in 2022 Q1?",
-        "Is TSMC's Operating Margin in 2021 Q2 higher than in 2020 Q2?",
-        "Is Microsoft's Tax Expense in 2024 Q1 lower than in 2023 Q4?",
-        "Is Google's Revenue in 2022 Q2 higher than in 2021 Q2?",
-        "Is Apple's Operating Income in 2021 Q1 higher than in 2020 Q1?",
-        "Was Broadcom's Cost of Goods Sold lower in 2020 Q2 compared to Q1?",
-    ]
-    
-    # single value query
-    print("Single Value Query:")
-    for query in sigle_value_query:
-        print("="*50)
-        print(f"Query: {query}")
-        result = agent.run(query)
-        print("Final Response:", result.content)
         
-    # trend analysis query
-    print("Trend Analysis Query:")
-    for query in trend_anlysis_query:
-        print("="*50)
-        print(f"Query: {query}")
-        result = agent.run(query)
-        print("Final Response:", result.content)
-        
-    # time based comparison query
-    print("Time Based Comparison Query:")
-    for query in time_based_comparison_query:
-        print("="*50)
-        print(f"Query: {query}")
-        result = agent.run(query)
-        print("Final Response:", result.content)
+    test_data = {
+        "annual_query": [
+            "Amazon 2020〜2024 Q1 的 Revenue 是否持續增長？",
+            "Apple 2021〜2023 Q3 的 Operating Margin 是否穩定？"
+        ],
+        "Quarterly_Comparisons": [
+            "TSMC 2021 Q1 與 2021 Q2 的 Operating Income 哪一季較高？",
+            "Google 2021 Q4 和 2022 Q4 的 Revenue 變動幅度是多少？",
+        ],
+        "Complex_Questions":[
+            "Intel 2020 Q4 和 2023 Q4 的 Gross Profit Margin 是否上升？",
+            "Samsung 2021 Q3 和 2023 Q3 的 Operating Expense 是否增加？",
+            "TSMC 2021 Q1 和 2024 Q1 的 Operating Margin 變化是否與 Samsung 相同？",
+            "Google, Apple, Microsoft 2020〜2024 Q4 的 Revenue 誰增幅最大？",
+            "Intel 2023 Q2 的 Operating Expense 是否當季特別高？",
+            "Amazon 2021 Q4 的 Tax Expense 是否對比前季異常升高？"
+        ]
+    }
+    
+    print("=== start test data ===")
+    for data in test_data.values():
+        for query in data:
+            print(f"Query: {query}")
+            print(f"Final Answer:\n"+agent.run(query).content)
+            print("===")
