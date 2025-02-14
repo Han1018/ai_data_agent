@@ -87,3 +87,24 @@ Below is the database schema for a financial database. Please translate the user
 """
 
 
+
+
+LLM_SQL_CHECK_COMPANY =  """請你先思考，確認 SQL_QUERY 是否出現 ALLOW_COMPANY 以外的公司。如果則輸出空集合的 sql 語句。沒有則維持原本的 SQL_QUERY。只輸出 sql 語法不要額外輸出:
+    - SQL_QUERY：
+    {sql_query}
+    
+    - ALLOW_COMPANY：{company_filter}
+    
+    - 空集合 sql 語句: ```sql
+SELECT * FROM fin_data WHERE 1 = 0;
+```
+    
+    - 正常情況: ```sql
+SQL_QUERY
+```
+"""
+
+CLEAN_FORMAT = "請從以下輸出中提取並保留純粹的 SQL 查詢語句，確保結果完整且可直接執行。  請 **僅** 輸出 SQL 語句，不要添加任何其他內容，如程式碼區塊標記（例如 ```sql ```）或額外的解釋文字。 Input: {user_input}"
+
+LLM_RESPONSE_QUESTION_BASE_ON_SQL = """Please reponse to user, reponse the user's question and the database result. USD:TWD = 1 : 32.93 if user question need.
+Below is the user question and database query result: \n"""
