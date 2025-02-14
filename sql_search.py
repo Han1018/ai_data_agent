@@ -10,7 +10,28 @@ from langchain.tools import Tool
 from langchain.tools import StructuredTool
 from pydantic import BaseModel
 from config import DB_HOST, DB_PORT, DATABASE, _USER, _PASSWORD, PROJECT_ID, REGION, MODEL_NAME, MODEL_PROVIDER, COT_LLM_MODEL_NAME
-from prompt import LLM_IS_IN_ALLOW_COMPANY
+from prompt import LLM_IS_IN_ALLOW_COMPANY, CHECK_CAN_DRAW_PROMPT, GEN_DRAW_IMAGE_FORMAT_PROMPT, GET_Yes_No_PROMPT, IMAGE_INFO_PROMPT
+import matplotlib.pyplot as plt
+import re
+import matplotlib.pyplot as plt
+import base64
+import io
+import json
+
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import os
+import pdb
+
+# 設定字型檔案的絕對路徑
+font_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+
+# 確保字型存在
+if not os.path.exists(font_path):
+    raise FileNotFoundError(f"字型檔案未找到: {font_path}")
+
+# 建立字型物件
+chinese_font = fm.FontProperties(fname=font_path)
 
 ACCESSIBLE_COMPANIES_LIST = {
     "CN" : ["Baidu", "Tencent"],
@@ -37,6 +58,19 @@ system_message = prompt_template.format(dialect="PostgreSQL", top_k=10)
 # init langGraph
 agent_executor = create_react_agent(llm, tools, prompt=system_message)
 
+def extract_json_info(input_str):
+    # 去掉開頭和結尾的三個反引號，並且去除 `json` 部分
+    cleaned_str = input_str.strip('`').replace('json', '').strip()
+    
+    try:
+        data = json.loads(cleaned_str)  # 將 JSON 字串轉換為 Python 字典
+        title = data.get("title", "圖表")  # 取得 title，若沒有則給預設值
+        y_label = data.get("y_label", "Value")  # 取得 y_label，若沒有則給預設值
+        return title, y_label
+    except json.JSONDecodeError:
+        print("無法解析 JSON 字串，請檢查格式。")
+        return "圖表", "Value"  
+
 def is_in_accessable_companies(query: str, allow_companies: list) -> bool:
     if allow_companies == ['all']:
         return True
@@ -50,6 +84,48 @@ def is_in_accessable_companies(query: str, allow_companies: list) -> bool:
     else:
         return True
 
+def extract_data_from_response(response):
+    """從 LLM 回應中提取數據，支援 YYYY-QN 格式"""
+    lines = response.split("\n")
+    data = []
+    
+    # 修改正則表達式，允許 YYYY-QN 格式
+    for line in lines:
+        match = re.match(r"(\d{4}-Q[1-4]):\s*([\d\.]+)", line.strip())
+        if match:
+            date, value = match.groups()
+            data.append((date, float(value)))  # 允許小數點數值
+            
+    return data
+
+
+def plot_line_chart(data, title="折線圖", x_label = "Time", y_label="Value", filename="chart.png"):
+    """繪製折線圖並存為本地圖片"""
+    if not data:
+        print("無法繪製圖表，因為沒有數據。")
+        return None
+
+    dates, values = zip(*sorted(data))  # 確保按時間排序
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(dates, values, marker="o", linestyle="-", color="b")
+
+    ax.set_xlabel("Time", fontproperties=chinese_font)
+    ax.set_ylabel(y_label, fontproperties=chinese_font)
+    ax.set_title(title, fontproperties=chinese_font)
+
+    ax.set_xticks(range(len(dates)))
+    ax.set_xticklabels(dates, rotation=45, fontproperties=chinese_font)
+    ax.grid(True)
+
+    # 儲存圖片
+    fig.savefig(filename, dpi=300, bbox_inches="tight")
+    # plt.close(fig)  # 關閉圖表，避免記憶體浪費
+
+    print(f"圖表已成功儲存為: {os.path.abspath(filename)}")  # 顯示完整路徑
+    # return filename  # 回傳圖片檔案名稱
+    return fig
+
 class SQLQueryInput(BaseModel):
     user_question: str
     role: str
@@ -62,6 +138,7 @@ def sql_query_tool(user_question: str, role: str) -> dict:
     user_question = user_question
     # print("ACCESSIBLE COMPANIES: ", ACCESSIBLE_COMPANIES_LIST[role])
     
+    # 檢查是否有權限查詢 db
     is_allow = is_in_accessable_companies(user_question, ACCESSIBLE_COMPANIES_LIST[role])
     print("IS ALLOW: ", is_allow)
     
@@ -72,10 +149,38 @@ def sql_query_tool(user_question: str, role: str) -> dict:
             db_response = response["messages"][-1].content
         else:
             db_response = str(response)
-        # print("SQL Tool response: ", db_response)
+        print("SQL Tool response: ", db_response)
     
     else:
         db_response = "資料庫中沒有找到相關的資料，可能是沒有相關的資料或是權限不足。"
+    
+    # 檢查畫圖需求
+    prompt = CHECK_CAN_DRAW_PROMPT.format(min_data_points = 3, sql_tool_result = db_response)
+    reponse = cot_llm.invoke(prompt).content
+    need_draw = llm.invoke(GET_Yes_No_PROMPT.format(user_input = reponse)).content.strip()
+    print("need_draw:", need_draw)
+    
+    # 繪製圖表
+    if need_draw in ["y", "Y"]:
+        prompt = GEN_DRAW_IMAGE_FORMAT_PROMPT.format(sql_tool_result = db_response) # 轉成 matplotlib 格式
+        response = cot_llm.invoke(prompt).content
+        print("response: ", response)
+        
+        data_points = extract_data_from_response(response) # 提取數據
+        print("data_points: \n", data_points)
+        
+        prompt = IMAGE_INFO_PROMPT.format(user_input = db_response)
+        response = llm.invoke(prompt).content.strip()
+        print("response: ", response)
+        title, y_label = extract_json_info(response)
+        
+        try:
+            plot_line_chart(data_points, y_label=y_label, title=title, filename="chart.png")
+        except Exception as e:
+            print(f"無法繪製圖表：{e}")
+    else:
+        print("不需要繪製圖表。")
+        db_response = db_response
         
     return {"structured_response": db_response}
 
@@ -97,10 +202,11 @@ def get_sql_tools():
 
 # 測試
 if __name__ == "__main__":
-    question = "show 5 first rows in the `fin_data` table."
+    question = "Retreive Amazon 2020 Q1 〜 2021 Q1 的 Revenue 資料。"
 
-    for step in agent_executor.stream(
-        {"messages": [{"role": "user", "content": question}]},
-        stream_mode="values",
-    ):
-        step["messages"][-1].pretty_print()
+    # for step in agent_executor.stream(
+    #     {"messages": [{"role": "user", "content": question}]},
+    #     stream_mode="values",
+    # ):
+    #     step["messages"][-1].pretty_print()
+    res = sql_query_tool(question, "GB")

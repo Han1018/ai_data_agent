@@ -107,7 +107,55 @@ SQL_QUERY
 ```
 """
 
-REMOVE_YEAR_PROMPT = "請幫我移除輸入句子中的`歷年`和 `財年`文字，並保持句子的完整性, Input: {user_input}"
+REMOVE_YEAR_PROMPT = "Remove the words '歷年' and '財年' from the input sentence. Input: {user_input}"
+
+CHECK_CAN_DRAW_PROMPT = """根據以下 SQL_TOOL 查詢結果，判斷是否有足夠的數據來繪製折線圖，最後輸出 y 或 n。
+檢查：
+- 折線圖需要至少包含兩個欄位：
+  1. X 軸 (時間)：年份或季度 (Year or Quarter)
+  2. Y 軸 (數值) : Revenue, Cost of Goods Sold, Total Asset 等財務指標
+- 數據筆數應該至少為 {min_data_points} 筆，才能確保折線圖的可視化效果。
+- 如果查詢結果符合條件，輸出 y
+- 如果查詢結果不符合條件，輸出 n
+
+- Output: y/n, 不要有除了 y, n 以外的任何字。
+---
+SQL_TOOL 查詢結果：{sql_tool_result}
+"""
+
+GEN_DRAW_IMAGE_FORMAT_PROMPT = """
+幫我根據 SQL_TOOL 輸出的內容，解析出折線圖所需的數據點 (時間(Year or Quarter):數值) 並回傳純文字格式：
+格式範例：
+```
+2024-Q1: 100
+2024-Q2: 120
+2024-Q3: 90
+```
+如果找不到資料，請回覆 "No Data".
+---
+SQL_TOOL 查詢結果：{sql_tool_result}
+"""
+
+GET_Yes_No_PROMPT = "請幫根據輸入的內容歸納語意，只輸出 'y' 或 'n'，只輸出一個字，不要有任何其他的字元！ 輸入: {user_input}"
+
+
+IMAGE_INFO_PROMPT = """
+請根據 DB_TOOL 回傳的內容，幫我訂出標題 (title) 和 Y 軸標籤 (y_label)。
+
+- example:
+```json
+"title" : "Samsung Operating Expense Comparison"
+"y_label" : "Operating Expense (in Billion USD)"
+```
+
+Output format:```json
+"title" : <title or 折線圖>
+"y_label" : <y_label or Value>
+```
+
+以下是 DB_TOOL 回傳的內容：
+DB_TOOL: "{user_input}"
+"""
 
 RAG_SPLIT_QUERY_PROMPT = """
 Please extract the following information from the query.
