@@ -88,6 +88,11 @@ Below is the database schema for a financial database. Please translate the user
 
 
 
+LLM_IS_IN_ALLOW_COMPANY =  """請你先思考，確認 User Question 中是否出現 ALLOW_COMPANY 以外的公司。如果出現以外的公司請回答 y, 否則回答 n。只輸出 y 或 n 不要額外輸出:
+    - User Question:{user_question}
+    
+    - ALLOW_COMPANY：{company_filter}
+"""
 
 LLM_SQL_CHECK_COMPANY =  """請你先思考，確認 SQL_QUERY 是否出現 ALLOW_COMPANY 以外的公司。如果則輸出空集合的 sql 語句。沒有則維持原本的 SQL_QUERY。只輸出 sql 語法不要額外輸出:
     - SQL_QUERY：

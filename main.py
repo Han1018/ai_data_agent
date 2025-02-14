@@ -22,7 +22,7 @@ from langchain_google_vertexai import (
     VectorSearchVectorStore,
 )
 
-from prompt import LLM_SQL_SYS_PROMPT, LLM_SQL_CHECK_COMPANY, CLEAN_FORMAT
+from prompt import LLM_SQL_SYS_PROMPT, LLM_IS_IN_ALLOW_COMPANY
 from IPython.display import Image, display
 
 import json
@@ -35,7 +35,7 @@ ACCESSIBLE_COMPANIES_LIST = {
     "gb" : ["all"]
 }
 
-ROLE = "cn"  # 設定使用者角色
+ROLE = "kr"  # 設定使用者角色
 ############################################
 # 1. 設定資料庫連線
 ############################################
@@ -58,7 +58,7 @@ db = SQLDatabase(engine)
 # 2. 初始化 Vertex AI & LLM
 ############################################
 init(project=PROJECT_ID, location=REGION)
-llm = init_chat_model("gemini-2.0-flash", model_provider="google_vertexai")
+llm = init_chat_model("gemini-2.0-flash-001", model_provider="google_vertexai")
 cot_llm = init_chat_model("gemini-2.0-flash-thinking-exp-01-21", model_provider="google_vertexai")
 
 ############################################
@@ -70,109 +70,38 @@ prompt_template = hub.pull("langchain-ai/sql-agent-system-prompt")
 system_message = prompt_template.format(dialect="PostgreSQL", top_k=5)
 agent_executor = create_react_agent(llm, tools, prompt=system_message)
 
-
-def extract_sql_from_response(response):
-    """從 LLM 回傳的內容中提取 SQL 查詢"""
-    if "messages" in response:
-        return response["messages"][-1].content.strip()
-    return str(response).strip()
-
-class SQLQueryGenerator(Tool):
-    """覆寫 SQLDatabaseToolkit，讓 LLM 只產生 SQL，而不執行"""
-
-    agent_executor: Any = Field(...)  # 明確宣告 agent_executor，讓 pydantic 允許這個屬性
-
-    def __init__(self, agent_executor, **kwargs):
-        super().__init__(
-            name="Generate SQL",
-            description="Generate SQL query based on user input without executing it.",
-            func=self.run,  # 🛠 **這裡修正，指定一個可執行函式**
-            agent_executor=agent_executor,  # 傳入 `agent_executor`
-            **kwargs
-        )
-
-    # 產生 SQL 語法
-    def run(self, query):
-        """讓 LLM 產生 SQL 查詢但不執行"""
-        response = self.agent_executor.invoke({"messages": [HumanMessage(content=query)]})
-
-        db_queries = []
-        
-        # 檢查 response["messages"] 內的 `tool_calls`
-        for message in response["messages"]:
-            if isinstance(message, AIMessage) and "function_call" in message.additional_kwargs:
-                function_call = message.additional_kwargs["function_call"]
-
-                if function_call["name"] == "sql_db_query":
-                    try:
-                        # 解析 JSON 字符串
-                        function_args = json.loads(function_call["arguments"])
-                        sql_query = function_args["query"]
-                        db_queries.append(sql_query)
-                    except json.JSONDecodeError as e:
-                        print("JSON 解析錯誤: ", e)
-
-            # 如果 `tool_calls` 是獨立陣列
-            if "tool_calls" in message.additional_kwargs:
-                for tool_call in message.additional_kwargs["tool_calls"]:
-                    if tool_call["name"] == "sql_db_query":
-                        sql_query = tool_call["args"]["query"]
-                        db_queries.append(sql_query)
-
-        # print("db_queries: ", db_queries)
-        
-        if db_queries:
-            return db_queries[0]  # 只取第一個 SQL 查詢
-        return "No SQL query generated"
-
-def modify_query_with_companies(query: str, allow_companies: list) -> str:
-    """使用 LLM 生成修改後的 SQL 查詢，確保只存取允許的公司"""
-
-    # 如果允許所有公司，則直接返回原始查詢
+def is_in_accessable_companies(query: str, allow_companies: list) -> bool:
     if allow_companies == ['all']:
-        return query
-
+        return True
+    
     # 格式化公司名稱以符合 SQL 語法
     company_filter = ", ".join([f"'{company}'" for company in allow_companies])
-
-    # 使用 LLM 生成新的 SQL 查詢
-    new_sql = cot_llm.invoke(LLM_SQL_CHECK_COMPANY.format(sql_query = query, company_filter = company_filter)).content
+    not_allow = cot_llm.invoke(LLM_IS_IN_ALLOW_COMPANY.format(user_question = query, company_filter = company_filter)).content # only return y or n in string
     
-    # 清理多餘不相關語句
-    clean_prompt =CLEAN_FORMAT.format(user_input = new_sql)
-    clen_sql = llm.invoke(clean_prompt+new_sql).content
-    
-    return clen_sql
-
-
-sql_generator = SQLQueryGenerator(agent_executor)  # 創建 SQL 產生工具
+    if not_allow in ["y", "Y"]:
+        return False
+    else:
+        return True
 
 def sql_query_tool(query: str) -> dict:
     """生成 SQL 查詢並執行回覆 query question"""
     
-    # 讓 LLM 產生 SQL 查詢
-    generated_sql = sql_generator.run(query)
-
-    # 在查詢中加入權限控制條件
-    accessiable_company = ACCESSIBLE_COMPANIES_LIST[ROLE]
-    secured_sql = modify_query_with_companies(generated_sql, accessiable_company)
-
-    # 執行修改後的 SQL
-    try:
-        db_response = db.run(secured_sql)
-    except Exception as e:
-        print(f"SQL query failed: {e}")
-        db_response = f"No data found for query."
+    is_allow = is_in_accessable_companies(query, ACCESSIBLE_COMPANIES_LIST[ROLE])
+    # print("IS ALLOW: ", is_allow)
     
-    # 合併 user question, db query, db response
-    query_with_db_result = f"User question : {query} \nDB query : {secured_sql}\nDB response : {db_response}。\n\n 如果 DB query = `SELECT * FROM fin_data WHERE 1 = 0;` 請回答資料庫中沒有找到相關的資料，可能是沒有相關的資料或是權限不足。"
+    if is_allow:
+        response = agent_executor.invoke({"messages": [HumanMessage(content=query)]})
+            # 提取最終答案 (根據實際回傳結構調整)
+        if "messages" in response:
+            db_response = response["messages"][-1].content
+        else:
+            db_response = str(response)
+        # print("SQL Tool response: ", db_response)
     
-    # llm 根據 query & db answer 生成回應
-    final_prompt = "Please reponse to user, reponse the user's question and the database result. USD:TWD = 1 : 32.93 if user question need.\n \
-    Below is the user question and database query result: \n"
-    sql_query_res = cot_llm.invoke(final_prompt + query_with_db_result).content
-    
-    return {"structured_response": sql_query_res}
+    else:
+        db_response = "資料庫中沒有找到相關的資料，可能是沒有相關的資料或是權限不足。"
+        
+    return {"structured_response": db_response}
 
 # 創建 Tool 物件
 sql_tool = Tool(
@@ -389,19 +318,19 @@ if __name__ == "__main__":
         #     "Samsung 2020〜2024 Q1 的 Revenue 是否持續增長？",
         #     "Samsung 2021〜2023 Q3 的 Operating Margin 是否穩定？"
         # ],
-        "Quarterly_Comparisons": [
-            "Baidu 2020 Q4 和 2023 Q4 的 Revenue 變化幅度是多少？",
-            "TSMC 2021 Q1 與 2021 Q2 的 Operating Income 哪一季較高？",
-            # "Google 2021 Q4 和 2022 Q4 的 Revenue 變動幅度是多少？",
-        ],
-        # "Complex_Questions":[
-        #     "Intel 2020 Q4 和 2023 Q4 的 Gross Profit Margin 是否上升？",
-        #     "Samsung 2021 Q3 和 2023 Q3 的 Operating Expense 是否增加？",
-        #     "TSMC 2021 Q1 和 2024 Q1 的 Operating Margin 變化是否與 Samsung 相同？",
-        #     "Google, Apple, Microsoft 2020〜2024 Q4 的 Revenue 誰增幅最大？",
-        #     "Intel 2023 Q2 的 Operating Expense 是否當季特別高？",
-        #     "Amazon 2021 Q4 的 Tax Expense 是否對比前季異常升高？"
-        # ]
+        # "Quarterly_Comparisons": [
+        #     "Baidu 2020 Q4 到 2023 Q4 的 Revenue 是多少？",
+        #     "TSMC 2021 Q1 與 2021 Q2 的 Operating Income 哪一季較高？",
+        #     # "Google 2021 Q4 和 2022 Q4 的 Revenue 變動幅度是多少？",
+        # ],
+        "Complex_Questions":[
+            "Intel 2020 Q4 和 2023 Q4 的 Gross Profit Margin 是否上升？",
+            "Samsung 2021 Q3 和 2023 Q3 的 Operating Expense 是否增加？",
+            "TSMC 2021 Q1 和 2024 Q1 的 Operating Margin 變化是否與 Samsung 相同？",
+            "Google, Apple, Microsoft 2020〜2024 Q4 的 Revenue 誰增幅最大？",
+            "Intel 2023 Q2 的 Operating Expense 是否當季特別高？",
+            "Amazon 2021 Q4 的 Tax Expense 是否對比前季異常升高？"
+        ]
     }
     
     print("=== start test data ===")
