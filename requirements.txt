@@ -1,0 +1,12 @@
+streamlit
+streamlit_chat
+langchain-community
+matplotlib
+bcrypt
+sqlalchemy
+google-cloud-aiplatform
+langchain-google-vertexai
+langgraph
+ipython
+psycopg2-binary
+google-cloud-sdk
