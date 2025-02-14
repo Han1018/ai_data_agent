@@ -11,15 +11,15 @@ ENDPOINT_ID = "2966706672111714304"
 # ✅ 資料庫設定
 DB_HOST = "34.56.145.52"  
 DB_PORT = "5432"  
-# INSTANCE = "sql-instance-relational"
+INSTANCE = "sql-instance-relational"
 DATABASE = "postgres" 
-# TABLE_NAME = "fin_data" 
+TABLE_NAME = "fin_data" 
 _USER = "postgres"
 _PASSWORD = "postgres"
 
 
 # model 設定
-MODEL_NAME = "gemini-1.5-pro"
+MODEL_NAME = "gemini-2.0-flash-001"
 MODEL_PROVIDER = "google_vertexai"
 EMBEDDING_MODEL_NAME = "text-embedding-005"
 

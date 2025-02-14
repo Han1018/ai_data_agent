@@ -1,43 +1,83 @@
 import streamlit as st
 from streamlit_chat import message
 from langchain.chat_models import init_chat_model
-import json
-import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from agent import Agent
-from sql_search import get_sql_tools
-from rag_search import get_rag_tools
-from config import MODEL_NAME, MODEL_PROVIDER
+from agent import create_agent, AgentState
+from config import PROJECT_ID,REGION,BUCKET,BUCKET_URI,INDEX_ID,ENDPOINT_ID,DB_HOST,DB_PORT,DATABASE,_USER,_PASSWORD,MODEL_NAME,MODEL_PROVIDER, EMBEDDING_MODEL_NAME
+import psycopg2
+from sqlalchemy import create_engine
+db_url = f'postgresql+psycopg2://{_USER}:{_PASSWORD}@{DB_HOST}:{DB_PORT}/{DATABASE}'
+engine = create_engine(db_url)
 
-DB_FILE = 'user_db.json'
-if not os.path.exists(DB_FILE):
-    with open(DB_FILE, 'w') as file:
-        db = {"users": {}}
-        json.dump(db, file)
-else:
-    with open(DB_FILE, 'r') as file:
-        db = json.load(file)
+conn = psycopg2.connect(
+    dbname=DATABASE,
+    user=_USER,
+    password=_PASSWORD,
+    host=DB_HOST,
+    port=DB_PORT
+)
+cursor = conn.cursor()
 
-def save_db():
-    with open(DB_FILE, 'w') as file:
-        json.dump(db, file)
+import bcrypt
 
-# Loading the model of your choice
-llm = init_chat_model(MODEL_NAME, model_provider=MODEL_PROVIDER)
-sql_tools = get_sql_tools()
-rag_tools = get_rag_tools()
-agent = Agent(model=llm, sql_tools=sql_tools, rag_tools=rag_tools)
+def hash_password(password):
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
-def conversational_chat(query):
-            history = "\n".join([f"User: {q}\nBot: {a}" for q, a in st.session_state['history']])
-            full_query = f"{history}\nUser: {query}\nBot:"
-            
-            response = agent.run(full_query).content  # 用 agent 來處理查詢
-            # **替換 ⏳ ... 為 AI 回應**
-            st.session_state['history'][-1] = (query, response)
-            return response
+def verify_password(password, hashed_password):
+    return bcrypt.checkpw(password.encode(), hashed_password.encode())
+
+def save_user(username, password, role):
+    """儲存使用者到 PostgreSQL"""
+    hashed_pw = hash_password(password)  # 加密密碼
+    try:
+        cursor.execute(
+            "INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", 
+            (username, hashed_pw, role)
+        )
+        conn.commit()
+    except psycopg2.IntegrityError:
+        conn.rollback()
+        st.error("Username already exists. Try another one.")
+
+def authenticate_user(username, password):
+    """從 SQL 驗證使用者"""
+    cursor.execute("SELECT password, role FROM users WHERE username = %s", (username,))
+    result = cursor.fetchone()
+    
+    if result:
+        hashed_pw, role = result
+        if verify_password(password, hashed_pw):
+            # **登入成功後存入 Session**
+            st.session_state["username"] = username
+            st.session_state["user_role"] = role
+            return role  # 登入成功，回傳使用者角色
+    return None  # 登入失敗
+
+
+USERROLE = {"KR": "🇰🇷 Korea Data Viewer", "CN": "🇨🇳 China Data Viewer", "GB": "🌍 Global Data Viewer"}
+MODE = {"💬 Chat Mode":"Chat Mode", "📈 Report Mode":"Report Mode"}
+# # Loading the model of your choice
+# llm = init_chat_model("gemini-1.5-pro", model_provider="google_vertexai")
+
+
+# 初始化 session_state 變數
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+if "agent_state" not in st.session_state:
+    st.session_state.agent_state = AgentState(
+        query="",
+        adjusted_query="",
+        tools=[],
+        tool_results=[],
+        final_answer="",
+        is_first= True,
+        is_fiscal= None,
+        is_usd= None,
+        is_end= False
+    )
+
 
 def main():
     st.title("📊 App")
@@ -45,77 +85,73 @@ def main():
     # Sidebar for selecting user role
     user_role = st.session_state.get("user_role", "🇰🇷 Korea Data Viewer")  # 若未設置則給予預設值
     username = st.session_state.get("username", "Guest")
+    
 
+    
     st.sidebar.title(f"👋 Welcome! **{username}**")
     page = st.sidebar.radio("Select operating mode", ["💬 Chat Mode", "📈 Report Mode"])
 
-    # Reset session state when role changes
-    if 'previous_role' not in st.session_state or st.session_state['previous_role'] != user_role:
-        temp_logged_in = st.session_state.get("logged_in", False)
-        temp_username = st.session_state.get("username", "")
-        st.session_state.clear()  # 清除 session，但登入狀態要還原
-        st.session_state['previous_role'] = user_role
-        st.session_state["logged_in"] = temp_logged_in
-        st.session_state["username"] = temp_username
-        st.session_state["user_role"] = user_role
-
+    
     # Display the selected user role in the sidebar
-    st.sidebar.write(f"Current User Role: {user_role}")
+    st.sidebar.write(f"Current User Role: {USERROLE[user_role]}")
     st.sidebar.write(f"Current Page: {page}")
-
-
 
     if page == "💬 Chat Mode":
         st.subheader("💬 AI ChatBot query")
-        # Function for handling conversation with history
-
+        st.session_state["mode"] = MODE[page]  # 確保 session_state 更新
+        mode = st.session_state.get("mode", "Chat Mode")  # 預設為 Chat Mode
         # Initialize session state
         if 'history' not in st.session_state:
             st.session_state['history'] = []
+        if 'waiting_for_response' not in st.session_state:
+            st.session_state['waiting_for_response'] = None  # 存放等待 AI 回應的訊息  
+        # 初始化 Agent
+        agent = create_agent(role=user_role, mode=mode)
 
         message("Hello! How can I assist you today?", avatar_style="thumbs")
 
-        # Custom CSS to make the chat input box fixed at the bottom
-        st.markdown(
-            """
-            <style>
-            /* Try applying to more general Streamlit chat input elements */
-            .stTextInput, .stChatInput, .stTextArea { 
-                position: fixed; 
-                bottom: 0; 
-                z-index: 9999;
-            }
-            </style>
-            """, unsafe_allow_html=True
-        )
 
-        # Chat input using st.chat_input
+        # **顯示歷史對話**
         chat_container = st.container()
         with chat_container:
-            for i, (user_msg, bot_msg) in enumerate(st.session_state['history']):
-                message(user_msg, is_user=True, key=f"user_{i}")
-                message(bot_msg, key=f"bot_{i}", avatar_style="thumbs")
+            for i, entry in enumerate(st.session_state['history']):
+                if entry["role"] == "user" and entry["type"] == "text":
+                    message(entry["content"], is_user=True, key=f"user_{i}")
+                elif entry["role"] == "bot" and entry["type"] == "text":
+                    message(entry["content"], key=f"bot_{i}", avatar_style="thumbs")
+                elif entry["role"] == "bot" and entry["type"] == "image":
+                    img_html = f'<img src="{entry["content"]}" width="250"/>'
+                    message(img_html, key=f"img_{i}", allow_html=True, avatar_style="thumbs")  # **顯示圖片**
 
+
+        # **處理等待中的 AI 回應**
+        if st.session_state['waiting_for_response']:
+            user_input = st.session_state['waiting_for_response']
+            # 先更新 query
+            st.session_state.agent_state["query"] = user_input
+            # **執行 agent**
+            final_answer, end_state = agent.run(user_input, st.session_state.agent_state)
+            # **更新 `AgentState`**
+            st.session_state.agent_state.update(end_state)  # 直接用 `end_state` 覆蓋原本的 state
+            st.session_state.agent_state["final_answer"] = final_answer  # 確保 `final_answer` 也更新
+            # **找到最後一筆 "⏳ ..." 並更新**
+            for i in range(len(st.session_state['history']) - 1, -1, -1):
+                if st.session_state['history'][i]["content"] == "⏳ ...":
+                    
+                    st.session_state['history'][i] = {"role": "bot", "type": "text", "content": final_answer}  # **直接替換 bot 的回應**
+                    # st.session_state['history'].append({"role": "bot", "type": "image", "content": img_url})  # **加入圖片**
+                    st.session_state['waiting_for_response'] = None  # 清除等待狀態
+                    st.rerun()  # 🔄 重新渲染頁面，讓 AI 回應顯示
+                    break
         # **聊天輸入框**
-        user_input = st.chat_input(f"Start chatting as {user_role}...")
+        user_input = st.chat_input(f"Start chatting as {USERROLE[user_role]}...")
 
-        if user_input:
-        # **立即顯示 User Input 並先加上 ⏳ ...**
-            with chat_container:
-                message(user_input, is_user=True, key=f"user_{len(st.session_state['history'])}_new")
-                message("⏳ ...", key=f"bot_{len(st.session_state['history'])}_new", avatar_style="thumbs")
+        if user_input and st.session_state['waiting_for_response'] is None:  # 只有在沒有等待中的回應時才加入新訊息
+                st.session_state['history'].append({"role": "user", "type": "text", "content": user_input})  # 顯示使用者輸入
+                st.session_state['history'].append({"role": "bot", "type": "text", "content": "⏳ ..."})  # 顯示等待中的訊息
+                st.session_state['waiting_for_response'] = user_input  # 標記等待 AI 回應
+                st.rerun()
 
-            # **先存入 ⏳ ...，待 AI 回應後替換**
-            st.session_state['history'].append((user_input, "⏳ ..."))
-
-            # **異步處理 AI 回應**
-            bot_response = conversational_chat(user_input)  
-
-            # **更新 ⏳ ... 為 AI 回應**
-            st.session_state['history'][-1] = (user_input, bot_response)  # 取代最後一筆 "⏳ ..."
-
-            # **刷新 UI 讓變更生效**
-            st.rerun()
         # **滾動到底部標記**
         st.markdown("<div id='scroll-bottom'></div>", unsafe_allow_html=True)
 
@@ -135,9 +171,9 @@ def main():
 
         # **available companies based on user role**
         company_options = {
-            "🇰🇷 Korea Data Viewer": ["Samsung"],
-            "🇨🇳 China Data Viewer": ["Baidu", "Tencent"],
-            "🌍 Global Data Viewer": ["Amazon","AMD","Amkor","Apple","Applied Material","Baidu","Broadcom","Cirrus Logic","Google","Himax","Intel","KLA","Marvell","Microchip","Microsoft","Nvidia","ON Semi","Qorvo","Qualcomm","Samsung","STM","Tencent","Texas Instruments","TSMC","Western Digital"]
+            "KR": ["Samsung"],
+            "CN": ["Baidu", "Tencent"],
+            "GB": ["Amazon","AMD","Amkor","Apple","Applied Material","Baidu","Broadcom","Cirrus Logic","Google","Himax","Intel","KLA","Marvell","Microchip","Microsoft","Nvidia","ON Semi","Qorvo","Qualcomm","Samsung","STM","Tencent","Texas Instruments","TSMC","Western Digital"]
         }
         available_companies = company_options[user_role]
 
@@ -183,7 +219,7 @@ def login_or_signup():
 
     # 登入頁面
     if st.session_state.get("logged_in", False):
-        st.success(f"Welcome back, {st.session_state['username']}! Role: {st.session_state['user_role']}")
+        st.success(f"Welcome back, {st.session_state['username']}! Role: {USERROLE[st.session_state['user_role']]}")
         return
 
     username = st.text_input("Username", value=st.session_state.get("username", ""))
@@ -192,23 +228,20 @@ def login_or_signup():
     col1, col2, col3 = st.columns([1, 3, 1])  # 左中右三欄
 
     with col3:
-        login = st.button("Login", use_container_width=True)
-
+        if st.button("Login", use_container_width=True):
+            role = authenticate_user(username, password)
+            if role:
+                st.success(f"Welcome, {username}! Role: {USERROLE[role]}")
+                st.session_state["logged_in"] = True
+                st.session_state["username"] = username
+                st.session_state["user_role"] = role
+                st.rerun()
+            else:
+                st.error("Invalid credentials. Please try again.")
     with col1:
         if st.button("Create Account"):
-            st.session_state["signup_mode"] = True  # 切換到註冊頁面
-            st.rerun()  # 重新載入頁面
-
-    if login:
-        if username in db["users"] and db["users"][username]["password"] == password:
-            role = db["users"][username]["role"]  # 讀取角色
-            st.success(f"Welcome, {username}! Role: {role}")
-            st.session_state["logged_in"] = True
-            st.session_state["username"] = username
-            st.session_state["user_role"] = role
+            st.session_state["signup_mode"] = True
             st.rerun()
-        else:
-            st.error("Invalid credentials. Please try again.")
 
 def signup_page():
     st.write("### 📝 Create an Account")
@@ -218,26 +251,20 @@ def signup_page():
     access_token = st.text_input("Access Token", type="password")
 
     valid_tokens = {
-        "cn123": "🇨🇳 China Data Viewer",
-        "kr123": "🇰🇷 Korea Data Viewer",
-        "g123": "🌍 Global Data Viewer"
+        "cn123": "CN",
+        "kr123": "KR",
+        "gb123": "GB"
     }
 
     col1, col2, col3 = st.columns([2, 1, 2])
     
     with col3:
         if st.button("Submit", use_container_width=True):
-            if username in db["users"]:
-                st.error("Username already exists. Try another one.")
-            elif access_token not in valid_tokens:
+            if access_token not in valid_tokens:
                 st.error("Invalid access token.")
             else:
-                # 註冊並存入使用者角色
-                db["users"][username] = {"password": password, "role": valid_tokens[access_token]}
-                save_db()
+                save_user(username, password, valid_tokens[access_token])  # 存入 SQL
                 st.success("Account created successfully! Redirecting to login...")
-
-                # 回到登入畫面
                 st.session_state["signup_mode"] = False
                 st.rerun()
 
@@ -249,16 +276,13 @@ def signup_page():
     ##### Access Tokens
     🇨🇳 China Data Viewer: `cn123`\n
     🇰🇷 Korea Data Viewer: `kr123`\n
-    🌍 Global Data Viewer: `g123`"""
+    🌍 Global Data Viewer: `gb123`"""
 )
 
 
 
 if __name__ == "__main__":
-    if "logged_in" not in st.session_state:
-        st.session_state["logged_in"] = False
-
-    if st.session_state.get("logged_in", False):
+    if st.session_state["logged_in"]:
         main()
     else:
         login_or_signup()

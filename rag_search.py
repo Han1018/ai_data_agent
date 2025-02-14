@@ -5,6 +5,7 @@ from langchain.chains import RetrievalQA
 from vertexai.preview.generative_models import GenerativeModel
 from langchain.tools import Tool
 import re
+import json
 from langchain_core.documents import Document
 from config import (PROJECT_ID, REGION, BUCKET, INDEX_ID, 
                     ENDPOINT_ID, BUCKET_URI, 
@@ -14,7 +15,10 @@ from google.cloud.aiplatform.matching_engine.matching_engine_index_endpoint impo
     Namespace,
     NumericNamespace,
 )
-from prompt import RAG_SPLIT_QUERY_PROMPT
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import create_retrieval_chain # .retrieval.create_retrieval_chain
+from prompt import RAG_SPLIT_QUERY_PROMPT, RAG_REPORT_PROMPT, RAG_CHAT_PROMPT
 
 aiplatform.init(project=PROJECT_ID, location=REGION, staging_bucket=BUCKET_URI)
 
@@ -54,30 +58,78 @@ def extract_info_from_query(llm, query: str):
 
     return company_name, calendar_year, calendar_qtr
 
-def update_filters(company_name, calendar_year, calendar_qtr):
-    """更新篩選條件"""
-    filters = []
-    numeric_filters = []
-    if company_name:
-        filters.append(Namespace(name="Company Name", allow_tokens=[company_name]))
-    if calendar_year:
-        numeric_filters.append(NumericNamespace(name="CALENDAR_YEAR", value_float=float(calendar_year), op="EQUAL"))
-    if calendar_qtr:
-        filters.append(Namespace(name="CALENDAR_QTR", allow_tokens=[calendar_qtr]))
-
-    return filters, numeric_filters
-
-def query_rag_tool(query: str):
+# def query_rag_tool(query: str, IS_FISCAL=True, ROLE='cn', MODE='report'): # 仍要新增ROLE的filter功能
+def query_rag_tool(query: str): # 仍要新增ROLE的filter功能
     """使用 Vertex AI Vector Search 進行檢索，並使用 Gemini 1.5 Pro 解析 Query"""
     llm = VertexAI(model_name=MODEL_NAME)
+    parsed_data = json.loads(query)
+
+    query = parsed_data["query"]
+    IS_FISCAL = parsed_data["IS_FISCAL"]
+    ROLE = parsed_data["ROLE"]
+    MODE = parsed_data["MODE"]
+
+    # 可訪問的公司列表
+    cn_companies = ['Baidu', 'Tencent']
+    kr_companies = ['Samsung']
+
+    # MODE
+    if MODE == 'report':
+        SYSTEM_PROMPT = RAG_REPORT_PROMPT # 改：真正的PROMPT
+        K=1000
+        ROLE = 'gb'       # 不分權限
+        IS_FISCAL = False # 歷年
+    else:
+        SYSTEM_PROMPT = RAG_CHAT_PROMPT   # 改：真正的PROMPT
+        K=10
 
     # 🔍 使用 Gemini 解析 Query，提取資訊
-    company_name, calendar_year, calendar_qtr = extract_info_from_query(llm, query)
+    company_name, year, qtr = extract_info_from_query(llm, query)
 
-    print(f"Extracted Info:\n - Company Name: {company_name}\n - CALENDAR_YEAR: {calendar_year}\n - CALENDAR_QTR: {calendar_qtr}")
+    print(f"Extracted Info:\n - Company Name: {company_name}\n - YEAR: {year}\n - QTR: {qtr}")
 
+    rag_res = {
+        "answer": "",
+        "sources": None,
+        "metadata": None,
+        "source_documents": None, 
+        "extracted_info": {
+            "Company Name": company_name,
+            "IS_FISCAL": IS_FISCAL,
+            "YEAR": year,
+            "QTR": qtr,
+            "MODE": MODE
+        }
+    }
+
+    # 📌 設定權限過濾
+    if ROLE.upper() == 'CN' and company_name not in cn_companies:
+        print(f"🔴 Access Denied: '{company_name}' is not available for CN role.")
+        rag_res["answer"] = "Access Denied: You are only allowed to view CN companies."
+        return rag_res
+
+    if ROLE.upper() == 'KR' and company_name not in kr_companies:
+        print(f"🔴 Access Denied: '{company_name}' is not available for KR role.")
+        rag_res["answer"] = "Access Denied: You are only allowed to view KR companies."
+        return rag_res
+    
     # 📌 設定檢索條件（如果有）
-    filters, numeric_filters = update_filters(company_name, calendar_year, calendar_qtr)
+    filters = []  # ✅ 用來存儲所有 `Namespace` 篩選條件
+    numeric_filters = []  # ✅ 用來存儲所有 `NumericNamespace` 篩選條件
+
+    if company_name:
+        filters.append(Namespace(name="Company Name", allow_tokens=[company_name]))  # ✅ 正確加入 filters
+    
+    if IS_FISCAL: # 財年
+        if year:
+            numeric_filters.append(NumericNamespace(name="FISCAL_YEAR", value_float=float(year), op="EQUAL"))  # ✅ 加入數值篩選     # 財年
+        if qtr:
+            filters.append(Namespace(name="FISCAL_QTR", allow_tokens=[qtr]))  # ✅ 加入 filters     # 財年
+    else:
+        if year:
+            numeric_filters.append(NumericNamespace(name="CALENDAR_YEAR", value_float=float(year), op="EQUAL"))  # ✅ 加入數值篩選 # 歷年
+        if qtr:
+            filters.append(Namespace(name="CALENDAR_QTR", allow_tokens=[qtr]))  # ✅ 加入 filters # 歷年
 
     print(filters, numeric_filters)
     retriever.search_kwargs = {
@@ -86,34 +138,33 @@ def query_rag_tool(query: str):
     "numeric_filter": numeric_filters if numeric_filters else None,  # ✅ 正確加入數值篩選
     }
 
-    # 🔍 進行檢索並回答
-    retrieval_qa = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        return_source_documents=True,
-    )
+    prompt = ChatPromptTemplate([
+        # ('system', f'Answer the user\'s questions in zh-tw, i.e. traditional Chinese, based on the context provided below:\n\n{{context}}\n If you don\'t know the answer, you must say "I don\'t know".{SYSTEM_PROMPT}'),
+        ('system', f'Answer the user\'s questions in the same language they use, primarily **Traditional Chinese (zh-tw)** or **English**, based on the context provided below: \n\n{{context}}\n If you don\'t know the answer, you must say "I don\'t know".{SYSTEM_PROMPT}'),
+        ('user', 'Question: {input}'),
+    ])
 
-    response = retrieval_qa({"query": query})
-    result = response["result"]
+    document_chain = create_stuff_documents_chain(llm, prompt)
+    retrieval_chain = create_retrieval_chain(retriever, document_chain)
+    context = retriever.invoke(query) # get_relevant_documents 更新
+
+    # 呼叫 retrieval_chain 並取得結果
+    response = retrieval_chain.invoke({
+        'input': query,
+        'context': context
+    })
+    # print(f"Query: {query}")
+    # print(f"Answer: {response['answer']}")
+
+    rag_res["answer"] = response["answer"]
 
     # 取得來源文件
-    source_docs = response["source_documents"]
-    sources = [doc.page_content if isinstance(doc, Document) else str(doc) for doc in source_docs]
-    metadata_list = [doc.metadata if isinstance(doc, Document) else str(doc) for doc in source_docs]
+    rag_res["source_documents"] = response["context"]
+    rag_res["sources"] = [doc.page_content if isinstance(doc, Document) else str(doc) for doc in rag_res["source_documents"]]
+    rag_res["metadata"] = [doc.metadata if isinstance(doc, Document) else str(doc) for doc in rag_res["source_documents"]]
 
 
-    return {
-        "answer": result,
-        "sources": sources,
-        "metadata": metadata_list,
-        "source_documents": source_docs,
-        "extracted_info": {
-            "Company Name": company_name,
-            "CALENDAR_YEAR": calendar_year,
-            "CALENDAR_QTR": calendar_qtr,
-        }
-    }
+    return rag_res
 
 # ✅ 建立 RAG Tool
 rag_tool = Tool(
