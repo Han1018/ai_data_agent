@@ -20,6 +20,7 @@ _PASSWORD = "postgres"
 
 # model 設定
 MODEL_NAME = "gemini-2.0-flash-001"
+COT_LLM_MODEL_NAME = "gemini-2.0-flash-thinking-exp-01-21"
 MODEL_PROVIDER = "google_vertexai"
 EMBEDDING_MODEL_NAME = "text-embedding-005"
 

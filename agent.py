@@ -8,7 +8,7 @@ from tools import fix_rag_result
 from langchain_google_vertexai import VertexAI
 from langgraph.checkpoint.memory import MemorySaver
 from langchain.chat_models import init_chat_model
-from prompt import LLM_SQL_SYS_PROMPT, USER_DECIDE_SEARCH_PROMPT, MULTI_RAG_PROMPT, FINAL_GENERATE_PROMPT, FIRST_ASKED_PROMPT, INVALID_QUERY_PROMPT
+from prompt import LLM_SQL_SYS_PROMPT, USER_DECIDE_SEARCH_PROMPT, MULTI_RAG_PROMPT, FINAL_GENERATE_PROMPT, FIRST_ASKED_PROMPT, INVALID_QUERY_PROMPT, REMOVE_YEAR_PROMPT
 from config import (PROJECT_ID, REGION, BUCKET, INDEX_ID, 
                     ENDPOINT_ID, BUCKET_URI, 
                     MODEL_NAME, EMBEDDING_MODEL_NAME, MODEL_PROVIDER
@@ -177,7 +177,11 @@ class Agent:
             return state
         
         query = state["query"]
-        prompt = LLM_SQL_SYS_PROMPT.format(query=query)
+        prompt = REMOVE_YEAR_PROMPT.format(user_input=query)
+        query = self.model.invoke(prompt).content
+        print("Removed 歷年後的結果:", query)
+        
+        prompt = LLM_SQL_SYS_PROMPT.format(user_query=query)
         adjusted_query = self.model.invoke(prompt).content
         print(f"Adjusted SQL query: {adjusted_query}\n")
         state["adjusted_query"] = adjusted_query
@@ -214,7 +218,12 @@ class Agent:
         name = "sql_db_query"
         tool = self.tool_dict.get(name)
             # user_query = SQL_SYS_PROMPT + query
-        tool_result = tool.run(query)
+        
+        input_data = {
+            "user_question" : query,
+            "role" : self.role
+        }
+        tool_result = tool.run(input_data)
         results.append(f"{name} tool reponse : {tool_result['structured_response']}")
             
         print(f"--- {name} tool results:", results)
