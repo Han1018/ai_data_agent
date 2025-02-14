@@ -241,7 +241,7 @@ class AgentState(TypedDict):
     tool_results: List[str]
     final_answer: str 
 
-def decide_tools(query: str) -> List[str]:
+def decide_tools(llm, query: str) -> List[str]:
     """
     根據 query，決定要使用哪個 tool。
     如果包含數值型關鍵字 → SQL
@@ -305,7 +305,7 @@ class Agent:
     def decide_action(self, state: AgentState) -> AgentState:
         """決定應該使用哪些工具"""
         query = state["query"]
-        selected_tools = decide_tools(query)
+        selected_tools = decide_tools(self.model, query)
         if not selected_tools:
             return {"query": query, "tools": [], "tool_results": [], "final_answer": "很抱歉，目前沒有對應的資料。"}
         return {"query": query, "tools": selected_tools, "tool_results": [], "final_answer": ""}
