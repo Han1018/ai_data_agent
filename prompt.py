@@ -123,6 +123,28 @@ CHECK_CAN_DRAW_PROMPT = """根據以下 SQL_TOOL 查詢結果，判斷是否有�
 SQL_TOOL 查詢結果：{sql_tool_result}
 """
 
+CHECK_CAN_DRAW_HISTOGRAM_PROMPT = """根據以下 SQL_TOOL 查詢結果，判斷是否有足夠的數據來繪製直方圖，最後輸出 y 或 n。
+
+檢查：
+1. **單一數值欄位 (X 軸數據)**
+   - 直方圖通常適用於單一數值型欄位 (如 Revenue, Cost, Profit, Age 等) 來分析其分佈。
+   - 如果查詢結果包含一個可用的數值欄位，且數據筆數至少為 {min_data_points} 筆，則符合條件。
+
+2. **不同類別但具有相同數值欄位**
+   - 如果查詢結果包含來自**不同公司 (Company)** 但**具有相同的數值型欄位** (如 Revenue, Profit 等)，可以比較其分佈。
+   - 此情境適用於**分組直方圖** (Grouped Histogram) 或**多重直方圖** (Multiple Histograms)。
+   - 若每個類別 (如公司) 至少有 {min_data_points} 筆數據，則符合條件。
+
+### 判斷方式：
+- 如果查詢結果符合其中**任一**條件，輸出 `y`
+- 若不符合，輸出 `n`
+
+- Output: y/n, 不要有除了 y, n 以外的任何字。
+---
+SQL_TOOL 查詢結果：{sql_tool_result}
+"""
+
+
 GEN_DRAW_IMAGE_FORMAT_PROMPT = """
 幫我根據 SQL_TOOL 輸出的內容，解析出折線圖所需的數據點 (時間(Year or Quarter):數值) 並回傳純文字格式：
 格式範例：
@@ -134,6 +156,31 @@ GEN_DRAW_IMAGE_FORMAT_PROMPT = """
 如果找不到資料，請回覆 "No Data".
 ---
 SQL_TOOL 查詢結果：{sql_tool_result}
+"""
+
+GEN_DRAW_HISTOGRAM_FORMAT_PROMPT = """
+幫我根據 SQL_TOOL 輸出的內容，解析出直方圖所需的數據點，並回傳純文字格式：
+- 如果數據包含多個類別（如不同公司），則應保留類別資訊，使其適用於分組直方圖。
+
+格式範例：
+- 分組直方圖（不同類別，但相同數值欄位）：
+```json
+Company A: 100 Company A: 120 Company A: 90 Company B: 110 Company B: 95
+```
+如果找不到資料，請回覆 "No Data".
+---
+SQL_TOOL 查詢結果：{sql_tool_result}
+"""
+
+HAS_MULTI_COMPANY_PROMPT = """You are an AI assistant that analyzes SQL query results. Given the database response (`db_response`), determine if it contains results from two or more distinct companies.
+
+Instructions:
+- If there are two or more distinct companies, return only: `y`
+- If there is only one company, return only: `n`
+- Do not return any explanations or additional text.
+
+Here is the database response:
+{db_response}
 """
 
 GET_Yes_No_PROMPT = "請幫根據輸入的內容歸納語意，只輸出 'y' 或 'n'，只輸出一個字，不要有任何其他的字元！ 輸入: {user_input}"
@@ -151,6 +198,31 @@ IMAGE_INFO_PROMPT = """
 Output format:```json
 "title" : <title or 折線圖>
 "y_label" : <y_label or Value>
+```
+
+以下是 DB_TOOL 回傳的內容：
+DB_TOOL: "{user_input}"
+"""
+
+IMAGE_HIST_INFO_PROMPT = """
+請根據 DB_TOOL 回傳的內容，幫我訂出標題 (title) 和 Y 軸標籤 (y_label) 和 X 軸標籤 (x_label)。
+
+- example:
+```json
+{
+"title" : "Operating Expense Comparison"
+"y_label" : "Operating Expense (in Billion USD)"
+"x_label" : "Company Name"
+}
+```
+
+Output format:
+```json
+{
+"title" : <title or 折線圖>
+"y_label" : <y_label or Value>
+"x_label" : "Company Name"
+}
 ```
 
 以下是 DB_TOOL 回傳的內容：
