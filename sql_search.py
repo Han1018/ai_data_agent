@@ -98,7 +98,6 @@ def extract_data_from_response(response):
             
     return data
 
-
 def plot_line_chart(data, title="折線圖", x_label = "Time", y_label="Value", filename="chart.png"):
     """繪製折線圖並存為本地圖片"""
     if not data:
@@ -120,11 +119,10 @@ def plot_line_chart(data, title="折線圖", x_label = "Time", y_label="Value", 
 
     # 儲存圖片
     fig.savefig(filename, dpi=300, bbox_inches="tight")
-    # plt.close(fig)  # 關閉圖表，避免記憶體浪費
+    plt.close(fig)  # 關閉圖表，避免記憶體浪費
 
     print(f"圖表已成功儲存為: {os.path.abspath(filename)}")  # 顯示完整路徑
-    # return filename  # 回傳圖片檔案名稱
-    return fig
+    return filename  # 回傳圖片檔案名稱
 
 class SQLQueryInput(BaseModel):
     user_question: str
@@ -182,7 +180,7 @@ def sql_query_tool(user_question: str, role: str) -> dict:
         print("不需要繪製圖表。")
         db_response = db_response
         
-    return {"structured_response": db_response}
+    return {"structured_response": db_response, "file_name": "chart.png"}
 
 # 使用 StructuredTool 來處理多個參數
 sql_tool = StructuredTool(

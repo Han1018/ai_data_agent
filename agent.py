@@ -14,6 +14,7 @@ from config import (PROJECT_ID, REGION, BUCKET, INDEX_ID,
                     MODEL_NAME, EMBEDDING_MODEL_NAME, MODEL_PROVIDER
                     )
 from IPython.display import Image, display
+import re
 
 
 
@@ -28,6 +29,13 @@ class AgentState(TypedDict):
     is_usd: bool
     is_end: bool
 
+def remove_year_terms(text: str) -> str:
+    """
+    移除字串中的 '歷年' 或 '財年'
+    :param text: 需要處理的字串
+    :return: 移除後的字串
+    """
+    return re.sub(r'(歷年|財年)', '', text)
 
 class Agent:
     def __init__(self, model, sql_tools, rag_tools, role, mode):
@@ -177,8 +185,10 @@ class Agent:
             return state
         
         query = state["query"]
-        prompt = REMOVE_YEAR_PROMPT.format(user_input=query)
-        query = self.model.invoke(prompt).content
+        # 移除 '歷年' 或 '財年' 字詞
+        # prompt = REMOVE_YEAR_PROMPT.format(user_input=query)
+        # query = self.model.invoke(prompt).content
+        query = remove_year_terms(query)
         print("Removed 歷年後的結果:", query)
         
         prompt = LLM_SQL_SYS_PROMPT.format(user_query=query)
@@ -226,7 +236,7 @@ class Agent:
         tool_result = tool.run(input_data)
         results.append(f"{name} tool reponse : {tool_result['structured_response']}")
             
-        print(f"--- {name} tool results:", results)
+        # print(f"--- {name} tool results:", results)
         state["tool_results"] = results
         return state
     
