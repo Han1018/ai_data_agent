@@ -227,11 +227,11 @@ def sql_plot_bar_chart(db_response, title="公司指標比較", x_label="公司"
     print("data_points: \n", data_points)
     
     # 生成圖表標題和 XY 軸標籤
-    print("db_response: ", db_response)
-    prompt = IMAGE_HIST_INFO_PROMPT.format(user_input = db_response.strip())
-    response = llm.invoke(prompt).content.strip()
-    print("response: ", response)
-    title, y_label, x_label = extract_json_info_xy_title(response)
+    # print("db_response: ", db_response)
+    # prompt = IMAGE_HIST_INFO_PROMPT.format(user_input = db_response.strip())
+    # response = llm.invoke(prompt).content.strip()
+    # print("response: ", response)
+    # title, y_label, x_label = extract_json_info_xy_title(response)
     
     try:
         plot_bar_chart(data_points, title=title, xlabel=x_label, ylabel=y_label, filename="bar_chart.png")
@@ -248,10 +248,10 @@ def sql_plot_line_chart(db_response, title="折線圖", x_label = "Time", y_labe
     print("data_points: \n", data_points)
     
     # 生成圖表標題和 Y 軸標籤
-    prompt = IMAGE_INFO_PROMPT.format(user_input = db_response)
-    response = llm.invoke(prompt).content.strip()
-    print("response: ", response)
-    title, y_label = extract_json_info(response)
+    # prompt = IMAGE_INFO_PROMPT.format(user_input = db_response)
+    # response = llm.invoke(prompt).content.strip()
+    # print("response: ", response)
+    # title, y_label = extract_json_info(response)
     
     try:
         plot_line_chart(data_points, y_label=y_label, title=title, filename="chart.png")
